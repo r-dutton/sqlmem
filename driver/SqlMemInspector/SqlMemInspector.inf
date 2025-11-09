@@ -1,0 +1,35 @@
+[Version]
+Signature   = "$Windows NT$"
+Class       = System
+ClassGuid   = {4D36E97D-E325-11CE-BFC1-08002BE10318}
+Provider    = %Manufacturer%
+DriverVer   = 06/15/2024,1.0.0.0
+CatalogFile = SqlMemInspector.cat
+PnpLockdown = 1
+
+[Manufacturer]
+%Manufacturer% = SqlMemInspector,NTamd64
+
+[SqlMemInspector.NTamd64]
+%SqlMemInspector.DeviceDesc% = SqlMemInspector_Install, Root\SqlMemInspector
+
+[SqlMemInspector_Install]
+CopyFiles = @SqlMemInspector.sys
+
+[SqlMemInspector_Install.Services]
+AddService = SqlMemInspector,0x00000002,SqlMemInspector_Service_Inst
+
+[SqlMemInspector_Service_Inst]
+DisplayName    = "SqlMemInspector"
+ServiceType    = 1 ; SERVICE_KERNEL_DRIVER
+StartType      = 3 ; SERVICE_DEMAND_START
+ErrorControl   = 1 ; SERVICE_ERROR_NORMAL
+ServiceBinary  = %12%\SqlMemInspector.sys
+LoadOrderGroup = Base
+
+[DestinationDirs]
+DefaultDestDir = 12
+
+[Strings]
+Manufacturer = "SQL Memory Diagnostics"
+SqlMemInspector.DeviceDesc = "SQL Memory Inspector Kernel Driver"

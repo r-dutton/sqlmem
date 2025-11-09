@@ -1,4 +1,5 @@
 using System.Collections.Concurrent;
+using System.Threading;
 using Microsoft.Diagnostics.Tracing;
 using Microsoft.Diagnostics.Tracing.Parsers;
 using Microsoft.Diagnostics.Tracing.Parsers.Kernel;
@@ -11,10 +12,10 @@ public sealed class EtwMemoryTracker : IDisposable
 {
     private const int MemLargePages = 0x20000000;
     private const int MemPhysical = 0x00400000;
+    private static readonly TimeSpan StatsStaleThreshold = TimeSpan.FromMinutes(5);
 
     private readonly ConcurrentDictionary<uint, EtwProcessMemoryStats> _stats = new();
     private readonly TraceEventSession _session;
-    private readonly CancellationTokenSource _cts = new();
     private readonly Task _processingTask;
 
     public EtwMemoryTracker(string? sessionName = null)
@@ -29,11 +30,17 @@ public sealed class EtwMemoryTracker : IDisposable
 
         _session.Source.Kernel.VirtualMemAlloc += OnVirtualAlloc;
         _session.Source.Kernel.VirtualMemFree += OnVirtualFree;
+        _session.Source.Kernel.ProcessStop += OnProcessStop;
+        _session.Source.Kernel.ProcessDCStop += OnProcessStop;
 
-        _processingTask = Task.Run(ProcessEventsAsync);
+        _processingTask = Task.Factory.StartNew(
+            ProcessEvents,
+            CancellationToken.None,
+            TaskCreationOptions.LongRunning,
+            TaskScheduler.Default);
     }
 
-    private async Task ProcessEventsAsync()
+    private void ProcessEvents()
     {
         try
         {
@@ -47,8 +54,6 @@ public sealed class EtwMemoryTracker : IDisposable
         {
             Console.Error.WriteLine($"[warn] ETW session terminated unexpectedly: {ex.Message}");
         }
-
-        await Task.CompletedTask;
     }
 
     private void OnVirtualAlloc(VirtualAllocTraceData data)
@@ -123,6 +128,16 @@ public sealed class EtwMemoryTracker : IDisposable
 
     private static long ClampToZero(long value) => value < 0 ? 0 : value;
 
+    private void OnProcessStop(ProcessTraceData data)
+    {
+        if (data.ProcessID <= 0)
+        {
+            return;
+        }
+
+        _stats.TryRemove((uint)data.ProcessID, out _);
+    }
+
     private static int GetIntPayload(TraceEvent data, string name)
     {
         int index = data.PayloadIndex(name);
@@ -194,12 +209,32 @@ public sealed class EtwMemoryTracker : IDisposable
 
     public IReadOnlyDictionary<uint, EtwProcessMemoryStats> BuildSnapshot()
     {
+        RemoveStaleEntries(DateTimeOffset.UtcNow - StatsStaleThreshold);
         return _stats.ToDictionary(kvp => kvp.Key, kvp => kvp.Value);
+    }
+
+    private void RemoveStaleEntries(DateTimeOffset threshold)
+    {
+        foreach (var kvp in _stats)
+        {
+            if (kvp.Value.LastUpdate < threshold)
+            {
+                _stats.TryRemove(kvp.Key, out _);
+            }
+        }
     }
 
     public void Dispose()
     {
-        _cts.Cancel();
+        try
+        {
+            _session.Source.StopProcessing();
+        }
+        catch (ObjectDisposedException)
+        {
+            // Session already stopped or disposed.
+        }
+
         _session.Dispose();
         try
         {
@@ -209,7 +244,5 @@ public sealed class EtwMemoryTracker : IDisposable
         {
             // Swallow exceptions thrown during shutdown.
         }
-
-        _cts.Dispose();
     }
 }

@@ -1,0 +1,8 @@
+SqlMemoryAnalyzer only inspects the first SQL Server process, missing additional instances for diagnostics.
+Resolved by iterating through all SQL Server processes when generating findings so each instance is evaluated.
+Driver: SqlmemEnumerateProcesses rejects a minimal summary buffer because sizeof(SQLMEM_SUMMARY) includes one entry due to ANYSIZE_ARRAY, so callers with only the header length receive STATUS_BUFFER_TOO_SMALL.
+Resolved by validating against FIELD_OFFSET(SQLMEM_SUMMARY, Entries) so callers providing just the header size succeed.
+Driver: SqlmemEnumerateProcesses calls ZwQuerySystemInformation and other PASSIVE_LEVEL-only APIs without ensuring the dispatch runs at PASSIVE_LEVEL, risking bugchecks if invoked at higher IRQL.
+Resolved by rejecting requests when KeGetCurrentIrql() is not PASSIVE_LEVEL before invoking PASSIVE-only routines.
+Driver: The device object lacks FILE_DEVICE_SECURE_OPEN, allowing user-mode symbolic link tricks to bypass security expectations when opening the device.
+Resolved by setting FILE_DEVICE_SECURE_OPEN on the device object immediately after creation.

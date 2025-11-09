@@ -22,8 +22,9 @@ public sealed class DriverClient : IDisposable
 
         if (_handle.IsInvalid)
         {
-            throw new Win32Exception(Marshal.GetLastWin32Error(),
-                "Failed to open \\ \\ . \\ SqlMemInspector. Ensure the driver is installed and loaded.");
+            throw new Win32Exception(
+                Marshal.GetLastWin32Error(),
+                "Failed to open \\.\\SqlMemInspector. Ensure the driver is installed and loaded.");
         }
     }
 

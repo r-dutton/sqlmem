@@ -221,7 +221,7 @@ SqlmemEnumerateProcesses(
         }
 
         entry->WorkingSetBytes = spi->WorkingSetSize;
-        entry->PrivateBytes = spi->PrivatePageCount;
+        entry->PrivateBytes = (ULONGLONG)spi->PrivatePageCount * PAGE_SIZE;
         entry->HasLockPagesPrivilege = SqlmemProcessHasLockPagesPrivilege(spi->UniqueProcessId);
 
         if (SqlmemImageNameEquals(&imageName, L"sqlservr.exe")) {

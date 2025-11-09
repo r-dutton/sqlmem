@@ -1,4 +1,5 @@
 #include <ntddk.h>
+#include <ntintsafe.h>
 #include <ntstrsafe.h>
 #include "include/sqlmem_types.h"
 
@@ -74,7 +75,7 @@ SqlmemProcessHasLockPagesPrivilege(
                 for (ULONG i = 0; i < privileges->PrivilegeCount; i++) {
                     LUID_AND_ATTRIBUTES privilege = privileges->Privileges[i];
                     if (RtlEqualLuid(&privilege.Luid, &lockMemoryLuid)) {
-                        if ((privilege.Attributes & (SE_PRIVILEGE_ENABLED | SE_PRIVILEGE_ENABLED_BY_DEFAULT)) != 0) {
+                        if ((privilege.Attributes & SE_PRIVILEGE_ENABLED) != 0) {
                             hasPrivilege = TRUE;
                             break;
                         }
@@ -107,15 +108,22 @@ SqlmemEnumerateProcesses(
     PBYTE cursor;
     PSYSTEM_PROCESS_INFORMATION spi;
     PSQLMEM_SUMMARY summary;
+    SIZE_T requiredBytes = 0;
+    SIZE_T entriesBytes = 0;
 
     if (OutputBuffer == NULL || BytesWritten == NULL) {
         return STATUS_INVALID_PARAMETER;
     }
 
-    summary = (PSQLMEM_SUMMARY)OutputBuffer;
-    if (OutputLength < sizeof(*summary)) {
+    *BytesWritten = 0;
+
+    SIZE_T minimumBytes = FIELD_OFFSET(SQLMEM_SUMMARY, Entries);
+    if (OutputLength < minimumBytes) {
+        *BytesWritten = (ULONG)minimumBytes;
         return STATUS_BUFFER_TOO_SMALL;
     }
+
+    summary = (PSQLMEM_SUMMARY)OutputBuffer;
 
     summary->Version = SQLMEM_SUMMARY_VERSION;
     summary->ProcessCount = 0;
@@ -185,10 +193,7 @@ SqlmemEnumerateProcesses(
     } while (status == STATUS_INFO_LENGTH_MISMATCH);
 
     if (!NT_SUCCESS(status)) {
-        if (processInfo != NULL) {
-            ExFreePoolWithTag(processInfo, 'mIqS');
-        }
-        return status;
+        goto Exit;
     }
 
     cursor = (PBYTE)processInfo;
@@ -196,12 +201,37 @@ SqlmemEnumerateProcesses(
         spi = (PSYSTEM_PROCESS_INFORMATION)cursor;
         processCount++;
 
-        if (FIELD_OFFSET(SQLMEM_SUMMARY, Entries) + (processCount * sizeof(SQLMEM_PROCESS_ENTRY)) > OutputLength) {
-            status = STATUS_BUFFER_TOO_SMALL;
+        if (spi->NextEntryOffset == 0) {
             break;
         }
 
-        PSQLMEM_PROCESS_ENTRY entry = &summary->Entries[processCount - 1];
+        cursor += spi->NextEntryOffset;
+    }
+
+    status = RtlSizeTMult(processCount, sizeof(SQLMEM_PROCESS_ENTRY), &entriesBytes);
+    if (!NT_SUCCESS(status)) {
+        *BytesWritten = MAXULONG;
+        goto Exit;
+    }
+
+    status = RtlSizeTAdd(FIELD_OFFSET(SQLMEM_SUMMARY, Entries), entriesBytes, &requiredBytes);
+    if (!NT_SUCCESS(status)) {
+        *BytesWritten = MAXULONG;
+        goto Exit;
+    }
+
+    if (OutputLength < requiredBytes) {
+        *BytesWritten = (ULONG)min(requiredBytes, (SIZE_T)MAXULONG);
+        status = STATUS_BUFFER_TOO_SMALL;
+        goto Exit;
+    }
+
+    summary->ProcessCount = processCount;
+
+    cursor = (PBYTE)processInfo;
+    for (ULONG index = 0; index < processCount; index++) {
+        spi = (PSYSTEM_PROCESS_INFORMATION)cursor;
+        PSQLMEM_PROCESS_ENTRY entry = &summary->Entries[index];
         SqlmemInitProcessEntry(entry);
 
         entry->Pid = HandleToULong(spi->UniqueProcessId);
@@ -233,19 +263,21 @@ SqlmemEnumerateProcesses(
             entry->IsVmmemOrVm = TRUE;
         }
 
-        cursor += spi->NextEntryOffset;
         if (spi->NextEntryOffset == 0) {
+            if (index + 1 != processCount) {
+                status = STATUS_INFO_LENGTH_MISMATCH;
+                goto Exit;
+            }
             break;
         }
+
+        cursor += spi->NextEntryOffset;
     }
 
-    if (NT_SUCCESS(status)) {
-        summary->ProcessCount = processCount;
-        *BytesWritten = FIELD_OFFSET(SQLMEM_SUMMARY, Entries) + (processCount * sizeof(SQLMEM_PROCESS_ENTRY));
-    } else {
-        *BytesWritten = 0;
-    }
+    *BytesWritten = (ULONG)requiredBytes;
+    status = STATUS_SUCCESS;
 
+Exit:
     if (processInfo != NULL) {
         ExFreePoolWithTag(processInfo, 'mIqS');
     }

@@ -1,0 +1,6 @@
+SqlMemoryAnalyzer only inspects the first SQL Server process, missing additional instances for diagnostics.
+Resolved by iterating through all SQL Server processes when generating findings so each instance is evaluated.
+SqlMemInspector driver does not report the required buffer size when IOCTL_SQLMEM_GET_SUMMARY fails, leaving callers without guidance on how large a buffer to provide.
+SqlMemInspector reports HasLockPagesPrivilege when the privilege is merely enabled-by-default but currently disabled, overstating which processes can lock pages.
+Resolved by counting processes before populating the summary, using safe size math, and returning the exact bytes required when the caller's buffer is insufficient.
+Resolved by requiring SE_PRIVILEGE_ENABLED before marking HasLockPagesPrivilege so only actively enabled tokens are reported as privileged.

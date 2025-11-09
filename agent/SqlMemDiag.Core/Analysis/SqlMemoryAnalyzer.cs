@@ -1,3 +1,4 @@
+using System.Linq;
 using SqlMemDiag.Core.Models;
 using SqlMemDiag.Core.Reporting;
 
@@ -23,15 +24,17 @@ public sealed class SqlMemoryAnalyzer
             hiddenGapGiB = 0;
         }
 
-        SqlMemProcessEntry? sql = processes.FirstOrDefault(p => p.IsSqlServer);
+        var sqlProcesses = processes.Where(p => p.IsSqlServer).ToList();
         SqlMemProcessEntry? vmmem = processes.FirstOrDefault(p => p.IsVmmemOrVm);
 
-        if (sql is not null)
+        foreach (var sql in sqlProcesses)
         {
             double lockedEstimateGiB = sql.LockedGiB + sql.LargePageGiB;
             if (etwStats.TryGetValue(sql.Pid, out var sqlEtw))
             {
-                lockedEstimateGiB = Math.Max(lockedEstimateGiB, BytesToGiB(sqlEtw.LockedBytesEstimate + sqlEtw.LargePageBytesEstimate));
+                lockedEstimateGiB = Math.Max(
+                    lockedEstimateGiB,
+                    BytesToGiB(sqlEtw.LockedBytesEstimate + sqlEtw.LargePageBytesEstimate));
             }
 
             if (lockedEstimateGiB >= summary.TotalPhysicalGiB * SqlLockedMemoryThresholdFraction)

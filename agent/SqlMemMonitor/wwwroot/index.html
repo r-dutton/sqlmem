@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>SQL Memory Monitor</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js" integrity="sha384-K0ZHt0t5W2T7+A6C8Il9MBR0YsWLpJg+a6Hw8N4N5KF4ANIhlpQNGnMJus9Ww7Yk" crossorigin="anonymous"></script>
+</head>
+<body>
+    <header>
+        <h1>SQL Server Memory Monitor</h1>
+        <p>Continuous snapshots from SqlMemInspector + ETW provide an auditable record of SQL Server demand.</p>
+    </header>
+
+    <main>
+        <section class="chart-card">
+            <div class="chart-header">
+                <h2>SQL Server Usage (GiB)</h2>
+                <label>
+                    Window:
+                    <select id="window-select">
+                        <option value="6">Last 6 hours</option>
+                        <option value="12">Last 12 hours</option>
+                        <option value="24" selected>Last 24 hours</option>
+                        <option value="72">Last 3 days</option>
+                        <option value="168">Last 7 days</option>
+                    </select>
+                </label>
+            </div>
+            <canvas id="sqlChart"></canvas>
+        </section>
+
+        <section class="grid">
+            <article class="card" id="latest-summary">
+                <h2>Latest Snapshot</h2>
+                <div class="summary-content"></div>
+            </article>
+            <article class="card" id="findings">
+                <h2>Recent Findings</h2>
+                <ul class="findings-list"></ul>
+            </article>
+        </section>
+    </main>
+
+    <footer>
+        <small>Driver build required on Windows. Web monitor aggregates snapshots into SQLite for trend analysis.</small>
+    </footer>
+
+    <script src="app.js"></script>
+</body>
+</html>

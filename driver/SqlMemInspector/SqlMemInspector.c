@@ -100,6 +100,10 @@ SqlmemEnumerateProcesses(
     )
 {
     NTSTATUS status;
+
+    if (KeGetCurrentIrql() != PASSIVE_LEVEL) {
+        return STATUS_INVALID_DEVICE_STATE;
+    }
     ULONG bufferLength = 0;
     PVOID processInfo = NULL;
     ULONG bytesNeeded = 0;
@@ -113,7 +117,8 @@ SqlmemEnumerateProcesses(
     }
 
     summary = (PSQLMEM_SUMMARY)OutputBuffer;
-    if (OutputLength < sizeof(*summary)) {
+    ULONG minimumLength = FIELD_OFFSET(SQLMEM_SUMMARY, Entries);
+    if (OutputLength < minimumLength) {
         return STATUS_BUFFER_TOO_SMALL;
     }
 
@@ -369,6 +374,7 @@ DriverEntry(
     }
 
     g_SqlmemDeviceObject->Flags |= DO_BUFFERED_IO;
+    g_SqlmemDeviceObject->Characteristics |= FILE_DEVICE_SECURE_OPEN;
 
     status = IoCreateSymbolicLink(&symLink, &deviceName);
     if (!NT_SUCCESS(status)) {

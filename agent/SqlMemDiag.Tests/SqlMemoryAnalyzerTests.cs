@@ -1,3 +1,4 @@
+using System.Linq;
 using Xunit;
 using SqlMemDiag.Core.Analysis;
 using SqlMemDiag.Core.Models;
@@ -40,6 +41,37 @@ public class SqlMemoryAnalyzerTests
         var report = analyzer.Analyze(summary, new Dictionary<uint, EtwProcessMemoryStats>());
 
         Assert.Contains(report.Findings, f => f.Id == "WSL2");
+    }
+
+    [Fact]
+    public void UsesEtwEstimatesForSqlLockedMemory()
+    {
+        const uint pid = 400;
+        var summary = BuildSummary(128 * GiB, 48 * GiB,
+            BuildProcess(pid: pid, name: "sqlservr.exe", workingSet: 16 * GiB, privateBytes: 32 * GiB, locked: 0, largePage: 0, isSql: true));
+
+        var etw = new Dictionary<uint, EtwProcessMemoryStats>
+        {
+            [pid] = new EtwProcessMemoryStats((long)(40 * GiB), 0, 0, DateTimeOffset.UtcNow)
+        };
+
+        var analyzer = new SqlMemoryAnalyzer();
+        var report = analyzer.Analyze(summary, etw);
+
+        Assert.Contains(report.Findings, f => f.Id == "SQL-LPIM");
+    }
+
+    [Fact]
+    public void DetectsMultipleSqlInstancesIndependently()
+    {
+        var summary = BuildSummary(128 * GiB, 24 * GiB,
+            BuildProcess(pid: 500, name: "sqlservr.exe", workingSet: 20 * GiB, privateBytes: 60 * GiB, locked: 30 * GiB, largePage: 0, isSql: true),
+            BuildProcess(pid: 501, name: "sqlservr.exe", workingSet: 18 * GiB, privateBytes: 58 * GiB, locked: 0, largePage: 32 * GiB, isSql: true));
+
+        var analyzer = new SqlMemoryAnalyzer();
+        var report = analyzer.Analyze(summary, new Dictionary<uint, EtwProcessMemoryStats>());
+
+        Assert.Equal(2, report.Findings.Count(f => f.Id == "SQL-LPIM"));
     }
 
     private static SqlMemSummary BuildSummary(ulong totalPhysical, ulong available, params SqlMemProcessEntry[] processes)
